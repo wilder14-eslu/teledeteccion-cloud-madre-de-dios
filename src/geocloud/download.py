@@ -71,27 +71,48 @@ def search_items(years, max_items):
 
 
 def scale_offset(item, asset_key):
-    """Escala y offset a reflectancia (cambio de processing baseline 04.00 en 2022)."""
+    """
+    Escala y offset a reflectancia de superficie.
+
+    Desde el processing baseline 04.00 (enero 2022) ESA suma +1000 a los DN (offset -0.1).
+    En la colección antigua 'sentinel-2-l2a' de Earth Search ese offset YA viene aplicado
+    (propiedad earthsearch:boa_offset_applied = true); aplicarlo de nuevo vuelve negativa la
+    reflectancia y dispara el NDVI fuera de [-1, 1].
+    """
     rb = item.assets[asset_key].extra_fields.get("raster:bands") or [{}]
     scale, offset = rb[0].get("scale"), rb[0].get("offset")
     if scale is None:
         scale = 1e-4
+    if item.properties.get("earthsearch:boa_offset_applied") is True:
+        return scale, 0.0
     if offset is None:
         baseline = float(item.properties.get("s2:processing_baseline", "0") or 0)
         offset = -0.1 if baseline >= 4.0 else 0.0
     return scale, offset
 
 
+def _to_reflectance(dn, s, o):
+    """DN -> reflectancia*1e4 (int16). Devuelve también la fracción de píxeles válidos negativos."""
+    valid = dn > 0
+    refl = np.where(valid, np.round((dn * s + o) * 10_000), C.NODATA_INT16)
+    neg = float((refl[valid] < 0).mean()) if valid.any() else 0.0
+    return refl, neg
+
+
 def download_item(bronze: Path, year, col, item, mgrs, cloud, frac) -> dict:
     out_name = f"{item.id}.tif"
     if list((bronze / "s2" / f"year={year}").glob(f"tile=*/{out_name}")):
         return {"item_id": item.id, "year": year, "status": "ya existía"}
-    bands = []
+    bands, offset_fix = [], False
     with rasterio.Env(**GDAL_ENV):
         for key in C.S2_ASSETS[:-1]:
             dn = warp_to_grid(item.assets[key].href, Resampling.average, nodata=0).astype(np.float32)
             s, o = scale_offset(item, key)
-            refl = np.where(dn > 0, np.round((dn * s + o) * 10_000), C.NODATA_INT16)
+            refl, neg = _to_reflectance(dn, s, o)
+            # Control de calidad: si el offset deja >20 % de reflectancias negativas, ya venía aplicado
+            if o != 0 and neg > 0.20:
+                refl, neg = _to_reflectance(dn, s, 0.0)
+                offset_fix = True
             bands.append(np.clip(refl, -2000, 30000).astype(np.int16))
         scl = warp_to_grid(item.assets["scl"].href, Resampling.nearest, nodata=0).astype(np.int16)
     n = write_tiles(np.stack(bands + [scl]),
@@ -100,7 +121,23 @@ def download_item(bronze: Path, year, col, item, mgrs, cloud, frac) -> dict:
                     skip_fn=lambda sub: not np.isin(sub[-1], C.SCL_VALID).any())
     return {"item_id": item.id, "year": year, "collection": col, "mgrs": mgrs,
             "datetime": item.properties.get("datetime"), "cloud_cover": cloud,
-            "aoi_fraction": round(frac, 3), "tiles": n, "status": "descargado"}
+            "aoi_fraction": round(frac, 3), "tiles": n, "status": "descargado",
+            "offset_aplicado_por_proveedor": bool(item.properties.get("earthsearch:boa_offset_applied")) or offset_fix}
+
+
+def purge_years(bronze, years):
+    """Borra las teselas y metadatos de los años indicados para volver a descargarlos."""
+    import shutil
+    bronze = Path(bronze)
+    for y in years:
+        d = bronze / "s2" / f"year={y}"
+        if d.exists():
+            shutil.rmtree(d)
+            print(f"[S2] {y}: teselas anteriores eliminadas")
+    meta = bronze / "s2_items.csv"
+    if meta.exists():
+        df = pd.read_csv(meta)
+        df[~df["year"].isin(years)].to_csv(meta, index=False)
 
 
 def run_s2(bronze, years=None, max_items=None, workers=4):

@@ -56,6 +56,29 @@ Google Cloud (Hansen)  ─────┴── lectura COG por rangos ───
 | 05 | `05_patrones_puntuales` | KDE, funciones G y L de Ripley con envolventes, Clark-Evans, dependencia de la distancia al río |
 | 06 | `06_regresion_espacial_y_ml` | MCO, SLM y SEM con tests LM; Random Forest con validación por bloques espaciales y puntuación distribuida |
 
+## Resultados (ejecución en Databricks serverless)
+
+Los notebooks de `notebooks/` contienen el código; las versiones **ejecutadas, con todas sus tablas, mapas y
+gráficos**, están en `resultados/`. Los archivos HTML se descargan y se abren en cualquier navegador.
+
+| # | Código | Ejecutado (GitHub) | HTML |
+|---|---|---|---|
+| 00 | [código](notebooks/00_ingesta_cloud_bronze.ipynb) | [ejecutado](resultados/notebooks_ejecutados/00_ingesta_cloud_bronze.ipynb) | [HTML](resultados/html/00_ingesta_cloud_bronze.html) |
+| 01 | [código](notebooks/01_silver_compuestos_spark.ipynb) | [ejecutado](resultados/notebooks_ejecutados/01_silver_compuestos_spark.ipynb) | [HTML](resultados/html/01_silver_compuestos_spark.html) |
+| 02 | [código](notebooks/02_gold_h3_y_aede.ipynb) | [ejecutado](resultados/notebooks_ejecutados/02_gold_h3_y_aede.ipynb) | [HTML](resultados/html/02_gold_h3_y_aede.html) |
+| 03 | [código](notebooks/03_dependencia_espacial.ipynb) | [ejecutado](resultados/notebooks_ejecutados/03_dependencia_espacial.ipynb) | [HTML](resultados/html/03_dependencia_espacial.html) |
+| 04 | [código](notebooks/04_variograma_y_kriging.ipynb) | [ejecutado](resultados/notebooks_ejecutados/04_variograma_y_kriging.ipynb) | [HTML](resultados/html/04_variograma_y_kriging.html) |
+| 05 | [código](notebooks/05_patrones_puntuales.ipynb) | [ejecutado](resultados/notebooks_ejecutados/05_patrones_puntuales.ipynb) | [HTML](resultados/html/05_patrones_puntuales.html) |
+| 06 | [código](notebooks/06_regresion_espacial_y_ml.ipynb) | [ejecutado](resultados/notebooks_ejecutados/06_regresion_espacial_y_ml.ipynb) | [HTML](resultados/html/06_regresion_espacial_y_ml.html) |
+
+| Cambio de NDVI y pérdida oficial | Clusters LISA |
+|---|---|
+| ![mapas](docs/figuras/02_mapas.png) | ![lisa](docs/figuras/03_lisa.png) |
+| **Puntos calientes Gi\*** | **Kriging para vacíos por nubes** |
+| ![gi](docs/figuras/03_gi_star.png) | ![kriging](docs/figuras/04_kriging.png) |
+| **Intensidad de nuevos frentes (KDE)** | **Modelo vs pérdida oficial** |
+| ![kde](docs/figuras/05_kde.png) | ![pred](docs/figuras/06_prediccion.png) |
+
 ## Cómo reproducirlo
 
 ### 1. Zona landing (archivos oficiales)
@@ -86,6 +109,14 @@ Autentica con OAuth, crea el esquema y el Volume, sube `data/landing` y crea un 
 Abrir los notebooks en Databricks y ejecutarlos en orden (00 a 06) sobre cómputo serverless. El notebook 00
 descarga Sentinel-2 y Hansen directamente desde AWS y Google Cloud.
 
+### 4. Publicar los resultados
+
+```powershell
+.\scripts\exportar_resultados.ps1
+```
+
+Exporta los notebooks ejecutados (con salidas) y las figuras para versionarlos en GitHub.
+
 **Plan B (workspace sin salida a internet):**
 
 ```powershell
@@ -98,10 +129,11 @@ python scripts\download_data.py
 ## Estructura
 
 ```
-├── notebooks/            00 a 06 (Databricks, PySpark)
+├── notebooks/            00 a 06 (Databricks, PySpark): código
+├── resultados/           notebooks ejecutados (.ipynb con salidas) y HTML
 ├── src/geocloud/         config, procesamiento raster, utilidades espaciales, compatibilidad Databricks/local
-├── scripts/              despliegue con Databricks CLI y descarga local de respaldo
-├── docs/                 guion de la demostración y figuras
+├── scripts/              despliegue y exportación con Databricks CLI, descarga local de respaldo
+├── docs/                 arquitectura, guion de la demostración y figuras/
 └── data/                 (ignorado por git) landing/ con las fuentes oficiales
 ```
 
@@ -111,6 +143,9 @@ python scripts\download_data.py
   mediana por temporada; los hexágonos sin observación válida se rellenan por kriging.
 - **Reflectancia:** se aplica escala y offset de cada escena (cambio de *processing baseline* 04.00 en 2022)
   para que los índices sean comparables entre años.
+- **Control radiométrico:** la colección antigua de Earth Search ya trae aplicado el offset del baseline 04.00;
+  se detecta por metadatos y por la fracción de reflectancias negativas, y el notebook 01 detiene el pipeline si el
+  NDVI sale de [-1, 1].
 - **Validación espacial:** los modelos de ML se evalúan con validación cruzada por bloques H3 de resolución 6
   para no sobreestimar el desempeño por autocorrelación espacial.
 - **Pérdida natural vs antrópica:** Geobosques separa en 2025 la pérdida natural (migración de ríos), que se excluye
