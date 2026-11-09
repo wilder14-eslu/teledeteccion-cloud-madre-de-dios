@@ -1,0 +1,92 @@
+# ---------------------------------------------------------------------------
+# Databricks Asset Bundle: orquestación del pipeline como código.
+#
+#   databricks bundle validate -p mdd
+#   databricks bundle deploy   -p mdd
+#   databricks bundle run pipeline_teledeteccion -p mdd
+#
+# DAG: 00 ingesta -> 01 silver -> 02 gold -> {03, 04, 05, 06} en paralelo
+# Cómputo: serverless (sin definición de cluster; es el único disponible en Free Edition)
+# ---------------------------------------------------------------------------
+bundle:
+  name: teledeteccion-cloud-madre-de-dios
+
+# Solo se sube al workspace lo que el pipeline necesita (código y notebooks)
+sync:
+  exclude:
+    - data/**
+    - resultados/**
+    - docs/**
+    - scripts/**
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-0aa6ef08-f0c8.cloud.databricks.com
+
+resources:
+  jobs:
+    pipeline_teledeteccion:
+      name: pipeline-teledeteccion-madre-de-dios
+      description: >
+        Ingesta cloud-to-cloud de Sentinel-2 y Hansen, fuentes oficiales (SERNANP, Geobosques, GADM, OSM),
+        compuestos sin nubes, grilla H3, análisis espacial y modelo de pérdida de bosque.
+      max_concurrent_runs: 1
+      timeout_seconds: 10800
+      tags:
+        proyecto: teledeteccion-madre-de-dios
+        capa: medallion
+
+      # Ejecución mensual (día 1, 06:00 hora de Lima). En modo development queda en pausa.
+      schedule:
+        quartz_cron_expression: "0 0 6 1 * ?"
+        timezone_id: America/Lima
+        pause_status: PAUSED
+
+      tasks:
+        - task_key: t00_ingesta_bronze
+          description: Landing -> Bronze (fuentes oficiales y descarga satelital)
+          notebook_task:
+            notebook_path: ./notebooks/00_ingesta_cloud_bronze.ipynb
+          max_retries: 1
+          min_retry_interval_millis: 60000
+
+        - task_key: t01_silver
+          description: Compuestos anuales sin nubes e índices espectrales (control de calidad radiométrico)
+          depends_on:
+            - task_key: t00_ingesta_bronze
+          notebook_task:
+            notebook_path: ./notebooks/01_silver_compuestos_spark.ipynb
+
+        - task_key: t02_gold
+          description: Grilla H3, covariables y dataset limpio
+          depends_on:
+            - task_key: t01_silver
+          notebook_task:
+            notebook_path: ./notebooks/02_gold_h3_y_aede.ipynb
+
+        - task_key: t03_dependencia_espacial
+          depends_on:
+            - task_key: t02_gold
+          notebook_task:
+            notebook_path: ./notebooks/03_dependencia_espacial.ipynb
+
+        - task_key: t04_kriging
+          depends_on:
+            - task_key: t02_gold
+          notebook_task:
+            notebook_path: ./notebooks/04_variograma_y_kriging.ipynb
+
+        - task_key: t05_patrones_puntuales
+          depends_on:
+            - task_key: t02_gold
+          notebook_task:
+            notebook_path: ./notebooks/05_patrones_puntuales.ipynb
+
+        - task_key: t06_regresion_y_ml
+          depends_on:
+            - task_key: t02_gold
+          notebook_task:
+            notebook_path: ./notebooks/06_regresion_espacial_y_ml.ipynb

@@ -109,7 +109,19 @@ Autentica con OAuth, crea el esquema y el Volume, sube `data/landing` y crea un 
 Abrir los notebooks en Databricks y ejecutarlos en orden (00 a 06) sobre cómputo serverless. El notebook 00
 descarga Sentinel-2 y Hansen directamente desde AWS y Google Cloud.
 
-### 4. Publicar los resultados
+### 4. Orquestación como código (Databricks Asset Bundle)
+
+```powershell
+databricks bundle validate -p mdd
+databricks bundle deploy   -p mdd
+databricks bundle run pipeline_teledeteccion -p mdd
+```
+
+`databricks.yml` define un Job serverless con el DAG `00 → 01 → 02 → {03, 04, 05, 06}`: los cuatro análisis
+corren en paralelo sobre la capa Gold. Incluye reintento en la ingesta y una programación mensual (en pausa en modo
+desarrollo).
+
+### 5. Publicar los resultados
 
 ```powershell
 .\scripts\exportar_resultados.ps1
@@ -133,6 +145,7 @@ python scripts\download_data.py
 ├── resultados/           notebooks ejecutados (.ipynb con salidas) y HTML
 ├── src/geocloud/         config, procesamiento raster, utilidades espaciales, compatibilidad Databricks/local
 ├── scripts/              despliegue y exportación con Databricks CLI, descarga local de respaldo
+├── databricks.yml        Job del pipeline (Databricks Asset Bundle)
 ├── docs/                 arquitectura, guion de la demostración y figuras/
 └── data/                 (ignorado por git) landing/ con las fuentes oficiales
 ```
