@@ -39,21 +39,30 @@ $src = "/Workspace/Users/$me/teledeteccion-cloud-madre-de-dios/notebooks"
 
 New-Item -ItemType Directory -Force -Path "resultados\notebooks_ejecutados", "resultados\html", "docs\figuras" | Out-Null
 
+# Rutas reales de los notebooks en el Git folder (con o sin extensión .ipynb)
+$listado = databricks workspace list $src -o json --profile $CliProfile | ConvertFrom-Json
+if (-not $listado) { Write-Host "No se pudo listar $src" -ForegroundColor Red; exit 1 }
+$tmpDir = Join-Path $env:TEMP "export_dbx"
+New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+
 foreach ($nb in $notebooks) {
+    $obj = $listado | Where-Object { (Split-Path $_.path -Leaf) -in @($nb, "$nb.ipynb", "$nb.py") } | Select-Object -First 1
+    if (-not $obj) {
+        Write-Host "  $nb no está en $src (¿hiciste Pull en el Git folder?)" -ForegroundColor Yellow
+        continue
+    }
     foreach ($fmt in @(@{f = "JUPYTER"; ext = "ipynb"; dir = "resultados\notebooks_ejecutados"},
                        @{f = "HTML"; ext = "html"; dir = "resultados\html"})) {
         $out = Join-Path $fmt.dir "$nb.$($fmt.ext)"
-        if (Test-Path $out) { Remove-Item $out }
-        databricks workspace export "$src/$nb" --format $fmt.f --file $out --profile $CliProfile 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            # En algunos Git folders el notebook conserva la extensión .ipynb en su ruta
-            databricks workspace export "$src/$nb.ipynb" --format $fmt.f --file $out --profile $CliProfile
-        }
-        if (Test-Path $out) {
+        $tmp = Join-Path $tmpDir "$nb.$($fmt.ext)"
+        if (Test-Path $tmp) { Remove-Item $tmp }
+        $err = databricks workspace export $obj.path --format $fmt.f --file $tmp --profile $CliProfile 2>&1
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $tmp)) {
+            Move-Item $tmp $out -Force          # solo se reemplaza la versión anterior si la exportación funcionó
             $mb = [math]::Round((Get-Item $out).Length / 1MB, 2)
             Write-Host ("  {0,-45} {1,6} MB" -f $out, $mb)
         } else {
-            Write-Host "  No se pudo exportar $nb ($($fmt.f))" -ForegroundColor Yellow
+            Write-Host "  No se pudo exportar $nb ($($fmt.f)); se conserva la versión anterior. $err" -ForegroundColor Yellow
         }
     }
 }

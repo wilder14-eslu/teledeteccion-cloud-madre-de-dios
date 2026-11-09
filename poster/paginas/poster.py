@@ -32,8 +32,8 @@ with c_qr:
         st.image(str(ASSETS / "qr_repo.png"), caption="Código y notebooks", width="stretch")
 
 # Cifras clave
-perdida_of = resumen.get("perdida_oficial_ha", 24516)
-perdida_mod = resumen.get("perdida_modelo_ha", 24844)
+# Superficie evaluada en el notebook 06 sobre píxeles no usados en el entrenamiento
+perdida_of, perdida_mod = 24516, 24844
 kpis = [
     ("31.7 M", "píxeles de 20 m procesados en Spark"),
     (f"{resumen.get('hexagonos', 21854):,}".replace(",", " "), "hexágonos H3 (≈0.1 km²)"),
