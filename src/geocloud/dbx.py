@@ -99,3 +99,13 @@ def show(df, n: int = 20):
             df.show(n, truncate=False)
         else:
             print(df.head(n).to_string())
+
+
+def clean(pdf):
+    """
+    Limpia los metadatos que Spark Connect (serverless) adjunta a un pandas.DataFrame
+    en df.attrs (métricas del plan). Si no se limpian, spark.createDataFrame(pdf)
+    falla con 'PlanMetrics is not JSON serializable'.
+    """
+    pdf.attrs = {}
+    return pdf
