@@ -71,6 +71,10 @@ gráficos**, están en `resultados/`. Los archivos HTML se descargan y se abren 
 | 05 | [código](notebooks/05_patrones_puntuales.ipynb) | [ejecutado](resultados/notebooks_ejecutados/05_patrones_puntuales.ipynb) | [HTML](resultados/html/05_patrones_puntuales.html) |
 | 06 | [código](notebooks/06_regresion_espacial_y_ml.ipynb) | [ejecutado](resultados/notebooks_ejecutados/06_regresion_espacial_y_ml.ipynb) | [HTML](resultados/html/06_regresion_espacial_y_ml.html) |
 
+**Orquestación:** Job serverless con 7 tareas; los cuatro análisis corren en paralelo sobre Gold (17 min en total).
+
+![job](docs/capturas/job_grafo_detalle.png)
+
 | Cambio de NDVI y pérdida oficial | Clusters LISA |
 |---|---|
 | ![mapas](docs/figuras/02_mapas.png) | ![lisa](docs/figuras/03_lisa.png) |
@@ -121,7 +125,19 @@ databricks bundle run pipeline_teledeteccion -p mdd
 corren en paralelo sobre la capa Gold. Incluye reintento en la ingesta y una programación mensual (en pausa en modo
 desarrollo).
 
-### 5. Publicar los resultados
+### 5. Aplicación web (Databricks App con Streamlit)
+
+```powershell
+.\scripts\desplegar_app.ps1
+```
+
+`app/` contiene un visor Streamlit que consulta las tablas Gold de Unity Catalog a través del SQL Warehouse
+serverless: mapa de hexágonos H3 (pydeck) con 8 indicadores (ΔNDVI, pérdida oficial, perturbación, NDVI por año,
+probabilidad del modelo, riesgo MINAM, LISA, Gi*), filtros por distrito, ANP, zona de amortiguamiento y distancia a
+cauces, KPIs, evolución 2018-2025, resumen por distrito y ficha de cada hexágono. El script crea la app, despliega el
+código y otorga a su identidad permisos de solo lectura.
+
+### 6. Publicar los resultados
 
 ```powershell
 .\scripts\exportar_resultados.ps1
@@ -146,6 +162,7 @@ python scripts\download_data.py
 ├── src/geocloud/         config, procesamiento raster, utilidades espaciales, compatibilidad Databricks/local
 ├── scripts/              despliegue y exportación con Databricks CLI, descarga local de respaldo
 ├── databricks.yml        Job del pipeline (Databricks Asset Bundle)
+├── app/                  aplicación web Streamlit (Databricks App)
 ├── docs/                 arquitectura, guion de la demostración y figuras/
 └── data/                 (ignorado por git) landing/ con las fuentes oficiales
 ```
