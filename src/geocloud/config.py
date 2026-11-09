@@ -25,7 +25,7 @@ TILE_PX = 512                 # tamaño de tesela para el procesamiento distribu
 # ---------------------------------------------------------------------------
 # Ventana temporal: temporada seca amazónica (menor nubosidad)
 # ---------------------------------------------------------------------------
-YEARS: List[int] = [2018, 2020, 2022, 2024]
+YEARS: List[int] = [2018, 2020, 2022, 2024, 2025]
 SEASON = ("07-01", "09-30")
 MAX_CLOUD = 60                # % nubosidad máxima por escena (luego se enmascara píxel a píxel con SCL)
 MAX_ITEMS_PER_YEAR = 12       # escenas menos nubosas por año
@@ -45,6 +45,18 @@ HANSEN_LAYERS = ["lossyear", "treecover2000"]
 
 GADM_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_PER_3.json.zip"
 
+# Geobosques (MINAM): códigos del raster de pérdida. 1-24 = año 2001-2024, 25 = antrópica 2025, 26 = natural 2025
+GEOBOSQUES_ANTROPICA_2025 = 25
+GEOBOSQUES_NATURAL_2025 = 26
+
+
+def geobosques_codes(y0: int, y1: int) -> List[int]:
+    """Códigos de pérdida antrópica de Geobosques entre (y0, y1]."""
+    codes = [y - 2000 for y in range(y0 + 1, min(y1, 2024) + 1)]
+    if y1 >= 2025:
+        codes.append(GEOBOSQUES_ANTROPICA_2025)
+    return codes
+
 # ---------------------------------------------------------------------------
 # Databricks (Unity Catalog). En Free Edition el catálogo por defecto es "workspace".
 # ---------------------------------------------------------------------------
@@ -52,6 +64,7 @@ CATALOG = "workspace"
 SCHEMA = "madre_dios_rs"
 VOLUME = "raw"
 VOLUME_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
+# Zonas del Volume: landing (archivos tal como los publica cada institución) -> bronze (alineado a la grilla)
 
 # Clases SCL de Sentinel-2 consideradas válidas (4 vegetación, 5 suelo desnudo, 6 agua, 7 sin clasificar)
 SCL_VALID = (4, 5, 6, 7)

@@ -1,9 +1,12 @@
 # ---------------------------------------------------------------------------
-# Configura Databricks con la CLI y sube la capa Bronze al Volume.
+# Despliegue en Databricks con la CLI: catálogo, Volume, zona landing y repositorio.
 # Requiere: Databricks CLI >= 0.205  (winget install Databricks.DatabricksCLI)
 #
 # Uso (desde la raíz del repo, en PowerShell):
-#   .\scripts\databricks_setup.ps1 -WorkspaceUrl "https://<tu-workspace>.cloud.databricks.com" -RepoUrl "https://github.com/<usuario>/teledeteccion-cloud-madre-de-dios"
+#   .\scripts\databricks_setup.ps1 -WorkspaceUrl "https://<workspace>.cloud.databricks.com" `
+#        -RepoUrl "https://github.com/wilder14-eslu/teledeteccion-cloud-madre-de-dios"
+#
+#   -SubirBronze  sube además data\bronze (solo si se usó el plan B de descarga local)
 # ---------------------------------------------------------------------------
 param(
     [Parameter(Mandatory = $true)][string]$WorkspaceUrl,
@@ -11,10 +14,12 @@ param(
     [string]$Catalog = "workspace",
     [string]$Schema = "madre_dios_rs",
     [string]$Volume = "raw",
-    [string]$CliProfile = "mdd"
+    [string]$CliProfile = "mdd",
+    [switch]$SubirBronze
 )
 
 $ErrorActionPreference = "Stop"
+$base = "dbfs:/Volumes/$Catalog/$Schema/$Volume"
 
 Write-Host "1) Autenticación OAuth (se abre el navegador)" -ForegroundColor Cyan
 databricks auth login --host $WorkspaceUrl --profile $CliProfile
@@ -23,17 +28,21 @@ Write-Host "2) Esquema y Volume en Unity Catalog" -ForegroundColor Cyan
 databricks schemas create $Schema $Catalog --profile $CliProfile 2>$null
 databricks volumes create $Catalog $Schema $Volume MANAGED --profile $CliProfile 2>$null
 
-Write-Host "3) Subiendo data/bronze al Volume (puede tardar según tu conexión)" -ForegroundColor Cyan
-$dest = "dbfs:/Volumes/$Catalog/$Schema/$Volume/bronze"
-databricks fs cp -r --overwrite ".\data\bronze" $dest --profile $CliProfile
-databricks fs ls "dbfs:/Volumes/$Catalog/$Schema/$Volume/bronze" --profile $CliProfile
+Write-Host "3) Subiendo la zona landing (fuentes oficiales tal como se descargaron)" -ForegroundColor Cyan
+databricks fs cp -r --overwrite ".\data\landing" "$base/landing" --profile $CliProfile
+databricks fs ls "$base/landing" --profile $CliProfile
+
+if ($SubirBronze) {
+    Write-Host "3b) Plan B: subiendo data\bronze descargado localmente" -ForegroundColor Yellow
+    databricks fs cp -r --overwrite ".\data\bronze" "$base/bronze" --profile $CliProfile
+}
 
 if ($RepoUrl -ne "") {
-    Write-Host "4) Creando Git folder con el repositorio (notebooks + src)" -ForegroundColor Cyan
+    Write-Host "4) Git folder con el repositorio (notebooks + src)" -ForegroundColor Cyan
     $me = (databricks current-user me --profile $CliProfile -o json | ConvertFrom-Json).userName
     $path = "/Workspace/Users/$me/teledeteccion-cloud-madre-de-dios"
     databricks repos create $RepoUrl gitHub --path $path --profile $CliProfile
-    Write-Host "Repositorio disponible en $path" -ForegroundColor Green
+    Write-Host "Repositorio en $path" -ForegroundColor Green
 }
 
-Write-Host "Listo. Abre notebooks/00_config_y_bronze en Databricks." -ForegroundColor Green
+Write-Host "Listo. Ejecuta notebooks/00_ingesta_cloud_bronze en Databricks (cómputo serverless)." -ForegroundColor Green

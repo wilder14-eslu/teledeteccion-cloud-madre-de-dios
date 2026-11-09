@@ -113,14 +113,23 @@ def composite_tile_to_pixels(contents: List[bytes]) -> pd.DataFrame:
     return pixel_frame(arrays, transform, crs, row0, col0, drop_empty_key="n_obs")
 
 
-def hansen_tile_to_pixels(content: bytes) -> pd.DataFrame:
-    """Tesela Hansen (2 bandas: lossyear, treecover2000) -> píxeles."""
+def bands_tile_to_pixels(content: bytes, names: List[str]) -> pd.DataFrame:
+    """Tesela categórica multibanda (Hansen, Geobosques) -> una fila por píxel."""
     arr, transform, crs = read_tif_bytes(content)
     row0 = int(round((transform.f - _grid_top()) / transform.e))
     col0 = int(round((transform.c - _grid_left()) / transform.a))
-    df = pixel_frame({"lossyear": arr[0].astype(np.int16), "treecover2000": arr[1].astype(np.int16)},
-                     transform, crs, row0, col0)
-    return df[["row", "col", "lon", "lat", "lossyear", "treecover2000"]]
+    df = pixel_frame({n: arr[i].astype(np.int16) for i, n in enumerate(names)}, transform, crs, row0, col0)
+    return df[["row", "col", "lon", "lat"] + list(names)]
+
+
+def hansen_tile_to_pixels(content: bytes) -> pd.DataFrame:
+    """Hansen GFC: lossyear (0-24) y treecover2000 (%)."""
+    return bands_tile_to_pixels(content, ["lossyear", "treecover2000"])
+
+
+def geobosques_tile_to_pixels(content: bytes) -> pd.DataFrame:
+    """Geobosques MINAM: pérdida (1-26), cobertura 2025 (1-5) y riesgo de deforestación (1-5)."""
+    return bands_tile_to_pixels(content, ["perdida_gb", "cobertura_gb", "riesgo_gb"])
 
 
 def _grid_top() -> float:

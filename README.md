@@ -18,26 +18,28 @@ principal frente de minería ilegal de la Amazonía peruana, y qué factores geo
 |---|---|
 | Área de estudio | 65 × 39 km (≈ 2 500 km²), UTM 19S, entre −70.45° y −69.85° de longitud y −13.15° y −12.80° de latitud |
 | Grilla | 3 250 × 1 950 píxeles de 20 m (6.3 M píxeles por banda), 28 teselas de 512 px |
-| Periodo | Temporada seca (julio-setiembre) de 2018, 2020, 2022 y 2024 |
+| Periodo | Temporada seca (julio-setiembre) de 2018, 2020, 2022, 2024 y 2025 |
 
-| Fuente | Uso | Acceso |
+| Fuente | Uso | Ingreso a la nube |
 |---|---|---|
-| Sentinel-2 L2A (ESA Copernicus), vía Earth Search / AWS Open Data | Bandas B2, B3, B4, B8, B11, B12 y máscara SCL | STAC público, sin credenciales |
-| Hansen Global Forest Change v1.12 (UMD) | Pérdida anual de bosque 2001-2024 y cobertura 2000: validación y etiquetas | Google Cloud Storage público |
-| GADM 4.1 | Distritos de Madre de Dios | Descarga directa |
-| OpenStreetMap | Carretera Interoceánica, ríos, áreas protegidas | Overpass API |
+| Sentinel-2 L2A (ESA Copernicus), vía Earth Search / AWS Open Data | Bandas B2, B3, B4, B8, B11, B12 y máscara SCL | cloud-to-cloud desde Databricks (COG, solo bloques del área) |
+| Hansen Global Forest Change v1.12 (UMD) | Pérdida 2001-2024 y cobertura 2000: comparación internacional | cloud-to-cloud desde Google Cloud Storage |
+| Geobosques (MINAM, PNCBMCC) | Pérdida oficial 2001-2025 (antrópica vs natural en 2025), bosque 2025, riesgo de deforestación | landing (zip oficial) |
+| SERNANP | ANP de administración nacional definitivas y zonas de amortiguamiento | landing (shapefile oficial) |
+| GADM 4.1 | Distritos de Madre de Dios | landing |
+| OpenStreetMap (Geofabrik) | Carretera Interoceánica y ríos | landing |
 
-## Arquitectura (medallion)
+## Arquitectura (medallion sobre Unity Catalog)
 
 ```
-Earth Search STAC ──► scripts/download_data.py ──► data/bronze (GeoTIFF por tesela)
-                                                       │  databricks fs cp
-                                                       ▼
-                     Unity Catalog Volume  /Volumes/workspace/madre_dios_rs/raw
-                                                       │
-  BRONZE  bronze_s2_files, bronze_s2_items, bronze_vec_*        (inventario, metadatos)
+Instituciones (SERNANP, MINAM, GADM, OSM) ──► data/landing ──databricks fs cp──┐
+                                                                               ▼
+                                   Volume  /Volumes/workspace/madre_dios_rs/raw/landing
+AWS Open Data (Sentinel-2) ─┐                                                  │ notebook 00 (en la nube)
+Google Cloud (Hansen)  ─────┴── lectura COG por rangos ──────────────────────► │
+  BRONZE  teselas GeoTIFF alineadas (UTM 19S, 20 m), vectores recortados, metadatos STAC
      │    binaryFile + groupBy(year, tile).applyInPandas
-  SILVER  silver_s2_pixeles (≈25 M filas), silver_hansen_pixeles (compuestos e índices por píxel)
+  SILVER  silver_s2_pixeles (≈30 M filas), silver_geobosques_pixeles, silver_hansen_pixeles
      │    h3_longlatash3string + agregaciones SQL
   GOLD    gold_h3_anual, gold_h3_features, gold_h3_ndvi_kriging, gold_pred_perdida_pixel
 ```
@@ -46,7 +48,7 @@ Earth Search STAC ──► scripts/download_data.py ──► data/bronze (GeoT
 
 | # | Notebook | Contenido |
 |---|---|---|
-| 00 | `00_config_y_bronze` | Unity Catalog, inventario distribuido de archivos, tablas Bronze, control de calidad visual |
+| 00 | `00_ingesta_cloud_bronze` | Landing → Bronze en la nube: fuentes oficiales, descarga satelital cloud-to-cloud, inventario distribuido, control de calidad |
 | 01 | `01_silver_compuestos_spark` | Compuesto por mediana sin nubes e índices espectrales (NDVI, NBR, NDWI, MNDWI, BSI) distribuidos por teselas |
 | 02 | `02_gold_h3_y_aede` | Agregación a hexágonos H3, covariables geográficas, exportación del dataset limpio, AEDE |
 | 03 | `03_dependencia_espacial` | Matriz W sobre H3, I de Moran, C de Geary, LISA, Getis-Ord Gi* (esda y Spark SQL escalable) |
@@ -56,41 +58,51 @@ Earth Search STAC ──► scripts/download_data.py ──► data/bronze (GeoT
 
 ## Cómo reproducirlo
 
-### 1. Entorno local (descarga de datos)
+### 1. Zona landing (archivos oficiales)
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
+Descargar de cada portal y dejar en `data/landing/` sin descomprimir:
+
+```
+data/landing/
+├── sernanp/        ANP Nacional Definitivas.zip, Zonas de Amortiguamiento.zip   (geo.sernanp.gob.pe)
+├── geobosques/     Perdida_2001_2025_Raster.zip, Bosque_NoBosque_Perdida_2001_2025_Raster.zip,
+│                   Mapa de Riesgo de Deforestacion.zip, *.xlsx                  (geobosques.minam.gob.pe)
+├── gadm/           gadm41_PER_3.json.zip                                        (gadm.org)
+└── osm_geofabrik/  peru-latest-free.shp.zip                                     (download.geofabrik.de)
 ```
 
-### 2. Verificar disponibilidad y descargar
-
-```powershell
-python scripts\check_availability.py      # inventario de escenas por año y acceso a cada fuente
-python scripts\download_data.py           # capa Bronze completa (≈1-2 GB)
-# prueba rápida: python scripts\download_data.py --years 2018 2024 --max-items 6
-```
-
-### 3. Subir a Databricks con la CLI
+### 2. Subir a Databricks con la CLI
 
 ```powershell
 winget install Databricks.DatabricksCLI
 .\scripts\databricks_setup.ps1 -WorkspaceUrl "https://<workspace>.cloud.databricks.com" `
-                               -RepoUrl "https://github.com/<usuario>/teledeteccion-cloud-madre-de-dios"
+    -RepoUrl "https://github.com/wilder14-eslu/teledeteccion-cloud-madre-de-dios"
 ```
 
-El script autentica con OAuth, crea el esquema y el Volume, copia `data/bronze` al Volume y crea un
-*Git folder* con este repositorio. Luego se ejecutan los notebooks en orden sobre cómputo serverless.
+Autentica con OAuth, crea el esquema y el Volume, sube `data/landing` y crea un *Git folder* con este repositorio.
+
+### 3. Ejecutar en la nube
+
+Abrir los notebooks en Databricks y ejecutarlos en orden (00 a 06) sobre cómputo serverless. El notebook 00
+descarga Sentinel-2 y Hansen directamente desde AWS y Google Cloud.
+
+**Plan B (workspace sin salida a internet):**
+
+```powershell
+pip install -r requirements.txt
+python scripts\check_availability.py
+python scripts\download_data.py
+.\scripts\databricks_setup.ps1 -WorkspaceUrl "..." -SubirBronze
+```
 
 ## Estructura
 
 ```
 ├── notebooks/            00 a 06 (Databricks, PySpark)
 ├── src/geocloud/         config, procesamiento raster, utilidades espaciales, compatibilidad Databricks/local
-├── scripts/              verificación, descarga y despliegue con Databricks CLI
+├── scripts/              despliegue con Databricks CLI y descarga local de respaldo
 ├── docs/                 guion de la demostración y figuras
-└── data/                 (ignorado por git) bronze/ descargado localmente
+└── data/                 (ignorado por git) landing/ con las fuentes oficiales
 ```
 
 ## Notas técnicas
@@ -101,8 +113,10 @@ El script autentica con OAuth, crea el esquema y el Volume, copia `data/bronze` 
   para que los índices sean comparables entre años.
 - **Validación espacial:** los modelos de ML se evalúan con validación cruzada por bloques H3 de resolución 6
   para no sobreestimar el desempeño por autocorrelación espacial.
-- **Databricks Free Edition:** solo cómputo serverless y salida a internet restringida; por eso la descarga se
-  hace fuera y los datos entran por el Volume.
+- **Pérdida natural vs antrópica:** Geobosques separa en 2025 la pérdida natural (migración de ríos), que se excluye
+  de la etiqueta del modelo para no confundirla con minería.
+- **Databricks Free Edition:** solo cómputo serverless; la salida a internet se habilita verificando la cuenta con
+  LinkedIn. Sin ella se usa el plan B.
 
 ## Referencias
 
@@ -111,7 +125,9 @@ El script autentica con OAuth, crea el esquema y el Volume, copia `data/bronze` 
 - Drusch, M., et al. (2012). Sentinel-2: ESA's optical high-resolution mission for GMES operational services. *Remote Sensing of Environment, 120*, 25-36.
 - Getis, A., & Ord, J. K. (1992). The analysis of spatial association by use of distance statistics. *Geographical Analysis, 24*(3), 189-206.
 - Gorelick, N., et al. (2017). Google Earth Engine: Planetary-scale geospatial analysis for everyone. *Remote Sensing of Environment, 202*, 18-27.
+- Ministerio del Ambiente. (2025). *Cobertura y pérdida de bosque húmedo amazónico 2001-2025* [Conjunto de datos]. Geobosques, Programa Nacional de Conservación de Bosques para la Mitigación del Cambio Climático. https://geobosques.minam.gob.pe
 - Hansen, M. C., et al. (2013). High-resolution global maps of 21st-century forest cover change. *Science, 342*(6160), 850-853.
 - Matheron, G. (1963). Principles of geostatistics. *Economic Geology, 58*(8), 1246-1266.
+- Servicio Nacional de Áreas Naturales Protegidas por el Estado. (2025). *ANP de administración nacional definitivas y zonas de amortiguamiento* [Conjunto de datos]. Geoportal SERNANP. https://geo.sernanp.gob.pe
 - Ripley, B. D. (1977). Modelling spatial patterns. *Journal of the Royal Statistical Society: Series B, 39*(2), 172-192.
 - Zaharia, M., et al. (2016). Apache Spark: A unified engine for big data processing. *Communications of the ACM, 59*(11), 56-65.

@@ -10,3 +10,4 @@ pystac-client>=0.7
 osmnx>=2.0
 h3>=4.0
 pyarrow>=14
+openpyxl>=3.1
