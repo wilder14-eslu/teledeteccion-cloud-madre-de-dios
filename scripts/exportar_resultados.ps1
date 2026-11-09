@@ -5,6 +5,7 @@
 #
 # Uso (desde la raíz del repo, en PowerShell):
 #   .\scripts\exportar_resultados.ps1
+#   .\scripts\exportar_resultados.ps1 -Solo 07_exportar_poster     (solo esos notebooks; el resto no se toca)
 #
 # Genera:
 #   resultados\notebooks_ejecutados\*.ipynb   GitHub los muestra con todas sus salidas
@@ -18,7 +19,8 @@ param(
     [string]$CliProfile = "mdd",
     [string]$Catalog = "workspace",
     [string]$Schema = "madre_dios_rs",
-    [string]$Volume = "raw"
+    [string]$Volume = "raw",
+    [string[]]$Solo = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,8 @@ if (-not $me) { Write-Host "No se pudo autenticar con el perfil $CliProfile" -Fo
 $src = "/Workspace/Users/$me/teledeteccion-cloud-madre-de-dios/notebooks"
 
 New-Item -ItemType Directory -Force -Path "resultados\notebooks_ejecutados", "resultados\html", "docs\figuras" | Out-Null
+
+if ($Solo.Count -gt 0) { $notebooks = $notebooks | Where-Object { $_ -in $Solo } }
 
 # Rutas reales de los notebooks en el Git folder (con o sin extensión .ipynb)
 $listado = databricks workspace list $src -o json --profile $CliProfile | ConvertFrom-Json
