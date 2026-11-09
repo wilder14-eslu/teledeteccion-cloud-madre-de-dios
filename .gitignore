@@ -1,0 +1,27 @@
+# Datos (se suben al Volume de Databricks, no a GitHub)
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Spark local
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Databricks CLI
+.databricks/
+.databrickscfg
+
+# Sistema
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Bitácora local del proceso
+log.txt
