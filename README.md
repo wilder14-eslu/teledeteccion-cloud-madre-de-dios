@@ -146,6 +146,14 @@ python scripts\download_data.py
 - **Control radiométrico:** la colección antigua de Earth Search ya trae aplicado el offset del baseline 04.00;
   se detecta por metadatos y por la fracción de reflectancias negativas, y el notebook 01 detiene el pipeline si el
   NDVI sale de [-1, 1].
+- **Máscara de bosque:** perturbación y pérdida se miden solo sobre el bosque del año base (Geobosques), para que
+  cauces, playas y zonas sin bosque no se confundan con minería; las tasas se expresan sobre el bosque disponible.
+- **Kriging por oclusión:** como el compuesto anual no deja vacíos, se simulan nubes (15 % del área) y se evalúa la
+  reconstrucción contra el valor real, con cobertura del intervalo de kriging.
+- **Patrones puntuales:** los eventos son parches reales de perturbación (componentes conexos ≥ 1 ha) y las
+  envolventes se generan bajo CSR condicionado al bosque disponible.
+- **Calibración del modelo:** las probabilidades se corrigen a la prevalencia real; la superficie de pérdida se estima
+  con la suma de probabilidades calibradas y la detección píxel a píxel con el umbral que maximiza F1.
 - **Validación espacial:** los modelos de ML se evalúan con validación cruzada por bloques H3 de resolución 6
   para no sobreestimar el desempeño por autocorrelación espacial.
 - **Pérdida natural vs antrópica:** Geobosques separa en 2025 la pérdida natural (migración de ríos), que se excluye

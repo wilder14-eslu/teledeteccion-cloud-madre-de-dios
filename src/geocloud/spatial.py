@@ -74,3 +74,81 @@ def ripley_envelope(n: int, bounds, radii, n_sim: int = 99, seed: int = 42):
         pts = np.column_stack([rng.uniform(xmin, xmax, n), rng.uniform(ymin, ymax, n)])
         sims[s] = ripley_k(pts, bounds, radii)
     return np.nanmin(sims, axis=0), np.nanmax(sims, axis=0)
+
+
+def ripley_envelope_candidates(n: int, candidates: np.ndarray, jitter: float, bounds, radii,
+                               n_sim: int = 99, seed: int = 42):
+    """
+    Envolventes de K(r) bajo CSR condicionado: los puntos simulados solo caen donde el
+    proceso puede ocurrir (por ejemplo, donde había bosque). Se muestrean centros
+    candidatos con reemplazo y se desplazan al azar dentro de su celda (jitter).
+    """
+    rng = np.random.default_rng(seed)
+    sims = np.empty((n_sim, len(radii)))
+    for s in range(n_sim):
+        idx = rng.integers(0, len(candidates), n)
+        pts = candidates[idx] + rng.uniform(-jitter, jitter, (n, 2))
+        sims[s] = ripley_k(pts, bounds, radii)
+    return np.nanmin(sims, axis=0), np.nanmax(sims, axis=0)
+
+
+def patches_from_mask(mask: np.ndarray, x0: float, y_top: float, res: float, min_px: int = 25):
+    """
+    Parches (componentes conexos, vecindad de 8) de una máscara booleana raster.
+    Devuelve un DataFrame con centroide UTM (km), área (ha) y número de píxeles.
+    """
+    from scipy import ndimage
+    lab, n = ndimage.label(mask, structure=np.ones((3, 3), dtype=bool))
+    if n == 0:
+        return pd.DataFrame(columns=["x_km", "y_km", "area_ha", "n_px"])
+    idx = np.arange(1, n + 1)
+    sizes = ndimage.sum(mask, lab, idx)
+    cents = np.array(ndimage.center_of_mass(mask, lab, idx))
+    df = pd.DataFrame({"n_px": sizes.astype(int),
+                       "x_km": (x0 + (cents[:, 1] + 0.5) * res) / 1000,
+                       "y_km": (y_top - (cents[:, 0] + 0.5) * res) / 1000})
+    df["area_ha"] = df.n_px * res * res / 10_000
+    return df[df.n_px >= min_px].reset_index(drop=True)
+
+
+def decorate_map(ax, bounds, vectors: dict = None, places=None, scale_km: int = 10, legend: bool = True,
+                 legend_loc: str = "upper left"):
+    """
+    Cartografía estándar para mapas en UTM: capas de contexto con leyenda, topónimos,
+    barra de escala y flecha de norte.
+    vectors: {"Ríos": (gdf, dict(color=..., lw=...)), ...} en el mismo CRS del eje.
+    """
+    from matplotlib.lines import Line2D
+    handles = []
+    for label, (g, style) in (vectors or {}).items():
+        if g is None or len(g) == 0:
+            continue
+        geom_type = g.geometry.geom_type.iloc[0]
+        if "Polygon" in geom_type:
+            g.boundary.plot(ax=ax, **style)
+        else:
+            g.plot(ax=ax, **style)
+        handles.append(Line2D([0], [0], color=style.get("color", "k"), lw=style.get("lw", 1),
+                              ls=style.get("ls", "-"), label=label))
+    if places is not None and len(places):
+        for _, r in places.iterrows():
+            x, y = r.geometry.x, r.geometry.y
+            if bounds[0] < x < bounds[2] and bounds[1] < y < bounds[3]:
+                ax.plot(x, y, "o", ms=3, color="black", zorder=5)
+                ax.annotate(str(r["name"]), (x, y), xytext=(3, 3), textcoords="offset points", fontsize=8,
+                            fontweight="bold", zorder=6,
+                            bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.7))
+    xmin, ymin, xmax, ymax = bounds
+    ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax)
+    # Barra de escala
+    x0, y0 = xmin + 0.04 * (xmax - xmin), ymin + 0.05 * (ymax - ymin)
+    ax.plot([x0, x0 + scale_km * 1000], [y0, y0], color="black", lw=3, solid_capstyle="butt", zorder=7)
+    ax.text(x0 + scale_km * 500, y0 + 0.015 * (ymax - ymin), f"{scale_km} km", ha="center", fontsize=8, zorder=7)
+    # Norte
+    xn, yn = xmax - 0.04 * (xmax - xmin), ymax - 0.16 * (ymax - ymin)
+    ax.annotate("N", xy=(xn, yn + 0.1 * (ymax - ymin)), xytext=(xn, yn), ha="center", fontsize=10,
+                fontweight="bold", arrowprops=dict(arrowstyle="-|>", color="black", lw=1.5), zorder=7)
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_xlabel(""); ax.set_ylabel("")
+    if legend and handles:
+        ax.legend(handles=handles, loc=legend_loc, fontsize=7, framealpha=0.85)
+    return handles

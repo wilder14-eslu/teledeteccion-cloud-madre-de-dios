@@ -103,11 +103,19 @@ def ingest_geofabrik(landing: Path, bronze: Path):
     roads = roads[roads["fclass"].isin(["trunk", "primary", "secondary", "trunk_link", "primary_link"])]
     roads = roads.rename(columns={"fclass": "highway"})[["name", "ref", "highway", "geometry"]]
     _save(roads, bronze, "vias")
-    ww = _read_zip_layer(z, "gis_osm_waterways_free_1.shp", bbox=bb)
-    ww = ww[ww["fclass"] == "river"].rename(columns={"fclass": "waterway"})[["name", "waterway", "geometry"]]
-    _save(ww, bronze, "rios")
-    print(f"[OSM] vías principales: {len(roads)} | ríos: {len(ww)} ({', '.join(ww['name'].dropna().unique()[:5])})")
-    return len(roads) + len(ww)
+    ww = _read_zip_layer(z, "gis_osm_waterways_free_1.shp", bbox=bb).rename(columns={"fclass": "waterway"})
+    rios = ww[ww["waterway"] == "river"][["name", "waterway", "geometry"]]
+    _save(rios, bronze, "rios")
+    # Red de drenaje completa: la minería aluvial de La Pampa trabaja sobre quebradas, no solo ríos grandes
+    cauces = ww[ww["waterway"].isin(["river", "stream"])][["name", "waterway", "geometry"]]
+    _save(cauces, bronze, "cauces")
+    pl = _read_zip_layer(z, "gis_osm_places_free_1.shp", bbox=bb)
+    pl = pl[pl["fclass"].isin(["city", "town", "village"]) & pl["name"].notna()]
+    keep = [c for c in ["name", "fclass", "population", "geometry"] if c in pl.columns]
+    _save(pl[keep], bronze, "poblados")
+    print(f"[OSM] vías principales: {len(roads)} | ríos: {len(rios)} | cauces (ríos + quebradas): {len(cauces)} "
+          f"| poblados: {len(pl)} ({', '.join(pl['name'].astype(str).unique()[:6])})")
+    return len(roads) + len(cauces) + len(pl)
 
 
 def ingest_geobosques(landing: Path, bronze: Path):
