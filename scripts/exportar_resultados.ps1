@@ -11,7 +11,8 @@
 #   resultados\html\*.html                    versión para abrir en cualquier navegador
 #   docs\figuras\*.png                        figuras guardadas por los notebooks
 #   poster\data\                              paquete liviano del póster web (notebook 07):
-#                                              h3_poster.parquet, capas\*.geojson, resumen.json
+#                                              h3_poster.parquet, capas\*.geojson, resumen.json,
+#                                              modelo\ (Random Forest de MLflow y zona de demostración)
 # ---------------------------------------------------------------------------
 param(
     [string]$CliProfile = "mdd",
@@ -69,6 +70,17 @@ if (Test-Path "poster\data\h3_poster.parquet") {
     }
 } else {
     Write-Host "  No se encontró poster/h3_poster.parquet en el Volume: ejecuta antes el notebook 07." -ForegroundColor Yellow
+}
+
+# El modelo se serializó con versiones concretas de scikit-learn y numpy: se fijan las mismas en el póster
+$metaFile = "poster\data\modelo\modelo_meta.json"
+if (Test-Path $metaFile) {
+    $meta = Get-Content $metaFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $req = Get-Content "poster\requirements.txt" -Encoding UTF8
+    $req = $req -replace '^scikit-learn.*', "scikit-learn==$($meta.sklearn)" -replace '^numpy.*', "numpy==$($meta.numpy)"
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllLines((Join-Path (Get-Location) "poster\requirements.txt"), $req, $utf8)
+    Write-Host "  requirements del póster: scikit-learn==$($meta.sklearn), numpy==$($meta.numpy)"
 }
 
 Write-Host "`nListo. Revisa con 'git status' y luego haz commit y push." -ForegroundColor Green

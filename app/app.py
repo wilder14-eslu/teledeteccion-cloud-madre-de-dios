@@ -61,6 +61,9 @@ def query(q: str) -> pd.DataFrame:
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_datos():
     feat = query(f"SELECT * FROM {SCHEMA}.gold_h3_features")
+    for c in ["departamento", "provincia", "distrito"]:          # GADM escribe algunos nombres sin espacios
+        if c in feat:
+            feat[c] = feat[c].replace({"MadredeDios": "Madre de Dios"})
     try:
         cl = query(f"SELECT h3, lisa, gi_z, hotspot FROM {SCHEMA}.gold_h3_clusters")
         feat = feat.merge(cl, on="h3", how="left")

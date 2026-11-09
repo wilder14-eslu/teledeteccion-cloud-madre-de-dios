@@ -7,7 +7,8 @@ geoestadística y Machine Learning. El rectángulo de análisis incluye sectores
 hexágono lleva su departamento, provincia y distrito, y todos los mapas muestran el límite departamental.
 
 **Póster interactivo:** `poster/streamlit_app.py`, publicado en Streamlit Community Cloud directamente desde este
-repositorio (ver [sección 7](#7-póster-interactivo-en-streamlit-community-cloud)).
+repositorio, con tres páginas: el póster, el visor completo de hexágonos y el Random Forest entrenado en Databricks
+puntuando píxeles reales en vivo (ver [sección 7](#7-póster-interactivo-en-streamlit-community-cloud)).
 
 ![arquitectura](docs/arquitectura.png)
 
@@ -59,7 +60,7 @@ Google Cloud (Hansen)  ─────┴── lectura COG por rangos ───
 | 04 | `04_variograma_y_kriging` | Variograma empírico, modelos teóricos, anisotropía, kriging ordinario vs IDW, relleno de vacíos por nubes |
 | 05 | `05_patrones_puntuales` | KDE, funciones G y L de Ripley con envolventes, Clark-Evans, dependencia de la distancia al río |
 | 06 | `06_regresion_espacial_y_ml` | MCO, SLM y SEM con tests LM; Random Forest con validación por bloques espaciales y puntuación distribuida |
-| 07 | `07_exportar_poster` | Paquete liviano para el póster web: hexágonos con todos los resultados, capas de contexto y resumen |
+| 07 | `07_exportar_poster` | Paquete para el póster web: hexágonos con todos los resultados, capas de contexto, resumen, modelo de MLflow y zona de demostración |
 
 ## Resultados (ejecución en Databricks serverless)
 
@@ -100,6 +101,8 @@ final se exporta el paquete del póster.
 | ![job](docs/capturas/job_grafo_detalle.png) | ![timeline](docs/capturas/job_timeline_paralelo.png) |
 | **Grafo del Job** | **Historial de ejecuciones** |
 | ![grafo](docs/capturas/job_grafo.png) | ![lista](docs/capturas/job_lista.png) |
+| **DAG con la tarea del póster (t07)** | |
+| ![grafo07](docs/capturas/job_grafo_con_poster.png) | |
 
 ### Galería de resultados
 
@@ -184,8 +187,19 @@ versionarlos en GitHub.
 
 ### 7. Póster interactivo en Streamlit Community Cloud
 
-La Databricks App solo la ven usuarios del workspace. Para compartir el trabajo con un enlace público, el póster
-(`poster/`) lee el paquete exportado por el notebook 07 y las figuras de `docs/`, sin conectarse a Databricks:
+La Databricks App solo la ven usuarios del workspace. Para compartir el trabajo con un enlace público, `poster/` lee
+el paquete exportado por el notebook 07 y las figuras de `docs/`, sin conectarse a Databricks:
+
+| Página | Contenido |
+|---|---|
+| Póster | Resumen, introducción, datos, método, mapa interactivo, resultados por etapa, discusión, conclusiones y referencias |
+| Visor de hexágonos | Lo mismo que la Databricks App: 8 indicadores, filtros, evolución, resumen por distrito y ficha de hexágono |
+| Modelo en vivo | El Random Forest registrado en MLflow, cargado en el servidor de Streamlit, puntúa una zona de 5 × 5 km; umbral ajustable con métricas recalculadas |
+
+El procesamiento pesado (Silver con 31.7 M filas, entrenamiento y validación) queda en Databricks; a Streamlit solo
+viaja el resultado y el modelo serializado. `exportar_resultados.ps1` fija en `poster/requirements.txt` las mismas
+versiones de scikit-learn y numpy con que se guardó el modelo.
+
 
 1. Ingresar a [share.streamlit.io](https://share.streamlit.io) con la cuenta de GitHub.
 2. **Create app → Deploy a public app from GitHub**: repositorio `wilder14-eslu/teledeteccion-cloud-madre-de-dios`,
