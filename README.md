@@ -6,11 +6,14 @@ Pipeline Big Data en **Databricks** (Spark + Delta Lake + Unity Catalog + H3) qu
 geoestadística y Machine Learning. El rectángulo de análisis incluye sectores limítrofes de **Cusco y Puno**: cada
 hexágono lleva su departamento, provincia y distrito, y todos los mapas muestran el límite departamental.
 
+**Póster interactivo:** `poster/streamlit_app.py`, publicado en Streamlit Community Cloud directamente desde este
+repositorio (ver [sección 7](#7-póster-interactivo-en-streamlit-community-cloud)).
+
 ![arquitectura](docs/arquitectura.png)
 
 ## Pregunta
 
-¿Dónde y con qué patrón espacial avanzó la pérdida de vegetación entre 2018 y 2024 en el
+¿Dónde y con qué patrón espacial avanzó la pérdida de vegetación entre 2018 y 2025 en el
 principal frente de minería ilegal de la Amazonía peruana, y qué factores geográficos la explican?
 
 ## Área y datos
@@ -56,6 +59,7 @@ Google Cloud (Hansen)  ─────┴── lectura COG por rangos ───
 | 04 | `04_variograma_y_kriging` | Variograma empírico, modelos teóricos, anisotropía, kriging ordinario vs IDW, relleno de vacíos por nubes |
 | 05 | `05_patrones_puntuales` | KDE, funciones G y L de Ripley con envolventes, Clark-Evans, dependencia de la distancia al río |
 | 06 | `06_regresion_espacial_y_ml` | MCO, SLM y SEM con tests LM; Random Forest con validación por bloques espaciales y puntuación distribuida |
+| 07 | `07_exportar_poster` | Paquete liviano para el póster web: hexágonos con todos los resultados, capas de contexto y resumen |
 
 ## Resultados (ejecución en Databricks serverless)
 
@@ -71,10 +75,33 @@ gráficos**, están en `resultados/`. Los archivos HTML se descargan y se abren 
 | 04 | [código](notebooks/04_variograma_y_kriging.ipynb) | [ejecutado](resultados/notebooks_ejecutados/04_variograma_y_kriging.ipynb) | [HTML](resultados/html/04_variograma_y_kriging.html) |
 | 05 | [código](notebooks/05_patrones_puntuales.ipynb) | [ejecutado](resultados/notebooks_ejecutados/05_patrones_puntuales.ipynb) | [HTML](resultados/html/05_patrones_puntuales.html) |
 | 06 | [código](notebooks/06_regresion_espacial_y_ml.ipynb) | [ejecutado](resultados/notebooks_ejecutados/06_regresion_espacial_y_ml.ipynb) | [HTML](resultados/html/06_regresion_espacial_y_ml.html) |
+| 07 | [código](notebooks/07_exportar_poster.ipynb) | [ejecutado](resultados/notebooks_ejecutados/07_exportar_poster.ipynb) | [HTML](resultados/html/07_exportar_poster.html) |
 
-**Orquestación:** Job serverless con 7 tareas; los cuatro análisis corren en paralelo sobre Gold (17 min en total).
+### Resultados principales
 
-![job](docs/capturas/job_grafo_detalle.png)
+| Indicador | Resultado |
+|---|---|
+| Datos procesados | 60 escenas Sentinel-2, 31.7 M píxeles-año en Silver, 21 854 hexágonos H3 (16 601 de bosque en 2018) |
+| Autocorrelación global | I de Moran del ΔNDVI = 0.745 y de la pérdida oficial = 0.668 (p = 0.001); el I del NDVI pasó de 0.32 (2018) a 0.74 (2025) |
+| Conglomerados | 973 hexágonos Pérdida-Pérdida (LISA); 859 puntos calientes Gi* al 99 %; Gi* en Spark SQL idéntico a esda (r = 1.000) |
+| Geoestadística | Variograma esférico con rango 14.1 km; kriging RMSE 0.188 vs IDW 0.197 en zonas ocultas; cobertura IC95 90 % |
+| Patrones puntuales | 598 parches nuevos (5 291 ha), Clark-Evans R = 0.733; mediana a ríos y quebradas 1.26 km vs 2.02 km del bosque |
+| Regresión espacial | SEM mejor modelo (AIC −5 551, λ = 0.78); ANP −0.043 (p = 0.024); distancia a cauces −0.022 (p = 0.017) |
+| Random Forest | AUC 0.912 por bloques espaciales (0.915 aleatorio), AUC-PR 0.75, F1 0.716 sobre 4.6 M píxeles no vistos |
+| Superficie | Pérdida 2019-2025: 24 516 ha oficial vs 24 844 ha estimada (+1.3 %) |
+
+### Orquestación
+
+Job serverless definido como código: los cuatro análisis corren en paralelo sobre Gold (17 min 15 s en total) y al
+final se exporta el paquete del póster.
+
+| Grafo de tareas | Ejecución en paralelo |
+|---|---|
+| ![job](docs/capturas/job_grafo_detalle.png) | ![timeline](docs/capturas/job_timeline_paralelo.png) |
+| **Grafo del Job** | **Historial de ejecuciones** |
+| ![grafo](docs/capturas/job_grafo.png) | ![lista](docs/capturas/job_lista.png) |
+
+### Galería de resultados
 
 | Cambio de NDVI y pérdida oficial | Clusters LISA |
 |---|---|
@@ -83,6 +110,14 @@ gráficos**, están en `resultados/`. Los archivos HTML se descargan y se abren 
 | ![gi](docs/figuras/03_gi_star.png) | ![kriging](docs/figuras/04_kriging.png) |
 | **Intensidad de nuevos frentes (KDE)** | **Modelo vs pérdida oficial** |
 | ![kde](docs/figuras/05_kde.png) | ![pred](docs/figuras/06_prediccion.png) |
+| **Compuestos anuales de NDVI** | **Control de calidad y máscara de nubes** |
+| ![ndvi](docs/figuras/01_ndvi_anual.png) | ![qc](docs/figuras/00_control_calidad.png) |
+| **Variogramas** | **Error del kriging según distancia** |
+| ![vario](docs/figuras/04_variogramas.png) | ![err](docs/figuras/04_error_distancia.png) |
+| **Funciones G y L de Ripley** | **Distancia a cauces y vía** |
+| ![gl](docs/figuras/05_G_L.png) | ![ecdf](docs/figuras/05_ecdf_covariables.png) |
+| **Dispersión de Moran** | **Importancia de variables (Random Forest)** |
+| ![moran](docs/figuras/03_moran_scatter.png) | ![imp](docs/figuras/06_importancia.png) |
 
 ## Cómo reproducirlo
 
@@ -111,7 +146,7 @@ Autentica con OAuth, crea el esquema y el Volume, sube `data/landing` y crea un 
 
 ### 3. Ejecutar en la nube
 
-Abrir los notebooks en Databricks y ejecutarlos en orden (00 a 06) sobre cómputo serverless. El notebook 00
+Abrir los notebooks en Databricks y ejecutarlos en orden (00 a 07) sobre cómputo serverless. El notebook 00
 descarga Sentinel-2 y Hansen directamente desde AWS y Google Cloud.
 
 ### 4. Orquestación como código (Databricks Asset Bundle)
@@ -122,8 +157,8 @@ databricks bundle deploy   -p mdd
 databricks bundle run pipeline_teledeteccion -p mdd
 ```
 
-`databricks.yml` define un Job serverless con el DAG `00 → 01 → 02 → {03, 04, 05, 06}`: los cuatro análisis
-corren en paralelo sobre la capa Gold. Incluye reintento en la ingesta y una programación mensual (en pausa en modo
+`databricks.yml` define un Job serverless con el DAG `00 → 01 → 02 → {03, 04, 05, 06} → 07`: los cuatro análisis
+corren en paralelo sobre la capa Gold y el último paso arma el paquete del póster. Incluye reintento en la ingesta y una programación mensual (en pausa en modo
 desarrollo).
 
 ### 5. Aplicación web (Databricks App con Streamlit)
@@ -144,7 +179,22 @@ código y otorga a su identidad permisos de solo lectura.
 .\scripts\exportar_resultados.ps1
 ```
 
-Exporta los notebooks ejecutados (con salidas) y las figuras para versionarlos en GitHub.
+Exporta los notebooks ejecutados (con salidas), las figuras y el paquete del póster (`poster/data/`, pocos MB) para
+versionarlos en GitHub.
+
+### 7. Póster interactivo en Streamlit Community Cloud
+
+La Databricks App solo la ven usuarios del workspace. Para compartir el trabajo con un enlace público, el póster
+(`poster/`) lee el paquete exportado por el notebook 07 y las figuras de `docs/`, sin conectarse a Databricks:
+
+1. Ingresar a [share.streamlit.io](https://share.streamlit.io) con la cuenta de GitHub.
+2. **Create app → Deploy a public app from GitHub**: repositorio `wilder14-eslu/teledeteccion-cloud-madre-de-dios`,
+   rama `main`, archivo principal `poster/streamlit_app.py`; en *Advanced settings*, Python 3.12.
+3. Cada *push* a `main` vuelve a desplegar el póster automáticamente.
+
+Textos, integrantes y cifras del póster se editan en `poster/contenido.py`; el escudo es opcional
+(`poster/assets/escudo_unmsm.png`). Prueba local: `pip install -r poster/requirements.txt` y
+`streamlit run poster/streamlit_app.py`.
 
 **Plan B (workspace sin salida a internet):**
 
@@ -158,13 +208,14 @@ python scripts\download_data.py
 ## Estructura
 
 ```
-├── notebooks/            00 a 06 (Databricks, PySpark): código
+├── notebooks/            00 a 07 (Databricks, PySpark): código
 ├── resultados/           notebooks ejecutados (.ipynb con salidas) y HTML
 ├── src/geocloud/         config, procesamiento raster, utilidades espaciales, compatibilidad Databricks/local
 ├── scripts/              despliegue y exportación con Databricks CLI, descarga local de respaldo
 ├── databricks.yml        Job del pipeline (Databricks Asset Bundle)
 ├── app/                  aplicación web Streamlit (Databricks App)
-├── docs/                 arquitectura, guion de la demostración y figuras/
+├── poster/               póster interactivo (Streamlit Community Cloud) y su paquete de datos
+├── docs/                 arquitectura, guion de la demostración, figuras/ y capturas/ de la orquestación
 └── data/                 (ignorado por git) landing/ con las fuentes oficiales
 ```
 

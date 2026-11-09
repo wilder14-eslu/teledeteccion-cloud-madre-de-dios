@@ -10,6 +10,8 @@
 #   resultados\notebooks_ejecutados\*.ipynb   GitHub los muestra con todas sus salidas
 #   resultados\html\*.html                    versión para abrir en cualquier navegador
 #   docs\figuras\*.png                        figuras guardadas por los notebooks
+#   poster\data\                              paquete liviano del póster web (notebook 07):
+#                                              h3_poster.parquet, capas\*.geojson, resumen.json
 # ---------------------------------------------------------------------------
 param(
     [string]$CliProfile = "mdd",
@@ -26,7 +28,8 @@ $notebooks = @(
     "03_dependencia_espacial",
     "04_variograma_y_kriging",
     "05_patrones_puntuales",
-    "06_regresion_espacial_y_ml"
+    "06_regresion_espacial_y_ml",
+    "07_exportar_poster"
 )
 
 $me = (databricks current-user me --profile $CliProfile -o json | ConvertFrom-Json).userName
@@ -56,5 +59,16 @@ foreach ($nb in $notebooks) {
 
 Write-Host "Figuras del Volume -> docs\figuras" -ForegroundColor Cyan
 databricks fs cp -r --overwrite "dbfs:/Volumes/$Catalog/$Schema/$Volume/figures" ".\docs\figuras" --profile $CliProfile
+
+Write-Host "Datos del póster web -> poster\data" -ForegroundColor Cyan
+New-Item -ItemType Directory -Force -Path "poster\data" | Out-Null
+databricks fs cp -r --overwrite "dbfs:/Volumes/$Catalog/$Schema/$Volume/poster" ".\poster\data" --profile $CliProfile
+if (Test-Path "poster\data\h3_poster.parquet") {
+    Get-ChildItem "poster\data" -Recurse -File | ForEach-Object {
+        Write-Host ("  {0,-45} {1,8} kB" -f $_.FullName.Replace((Get-Location).Path + "\", ""), [math]::Round($_.Length / 1KB, 1))
+    }
+} else {
+    Write-Host "  No se encontró poster/h3_poster.parquet en el Volume: ejecuta antes el notebook 07." -ForegroundColor Yellow
+}
 
 Write-Host "`nListo. Revisa con 'git status' y luego haz commit y push." -ForegroundColor Green

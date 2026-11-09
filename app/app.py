@@ -122,7 +122,7 @@ def colorear(serie: pd.Series, cmap: str, vmin: float, vmax: float, alpha: int =
     cm = matplotlib.colormaps[cmap]
     x = ((serie.astype(float) - vmin) / (vmax - vmin)).clip(0, 1)
     rgba = (cm(x.fillna(0).values)[:, :3] * 255).astype(int)
-    out = [list(c) + [alpha] for c in rgba]
+    out = [[int(x) for x in c] + [alpha] for c in rgba]   # int nativo: pydeck serializa numpy.int64 como texto
     return [c if not np.isnan(v) else [200, 200, 200, 60] for c, v in zip(out, serie.astype(float))]
 
 

@@ -1,0 +1,10 @@
+# Tema del póster en Streamlit Community Cloud (se lee desde la raíz del repositorio)
+[theme]
+base = "light"
+primaryColor = "#2d6a4f"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f5f2"
+textColor = "#1f2933"
+
+[client]
+toolbarMode = "minimal"
