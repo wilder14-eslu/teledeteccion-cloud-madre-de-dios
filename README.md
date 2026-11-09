@@ -2,8 +2,9 @@
 
 Pipeline Big Data en **Databricks** (Spark + Delta Lake + Unity Catalog + H3) que procesa imágenes
 **Sentinel-2** para cuantificar la pérdida de bosque asociada a la minería aluvial en el corredor
-**La Pampa, Huepetuhe y Mazuko** (Madre de Dios, Perú), y la analiza con estadística espacial,
-geoestadística y Machine Learning.
+**La Pampa, Huepetuhe y Mazuko** (sur de Madre de Dios, Perú), y la analiza con estadística espacial,
+geoestadística y Machine Learning. El rectángulo de análisis incluye sectores limítrofes de **Cusco y Puno**: cada
+hexágono lleva su departamento, provincia y distrito, y todos los mapas muestran el límite departamental.
 
 ![arquitectura](docs/arquitectura.png)
 
@@ -26,7 +27,7 @@ principal frente de minería ilegal de la Amazonía peruana, y qué factores geo
 | Hansen Global Forest Change v1.12 (UMD) | Pérdida 2001-2024 y cobertura 2000: comparación internacional | cloud-to-cloud desde Google Cloud Storage |
 | Geobosques (MINAM, PNCBMCC) | Pérdida oficial 2001-2025 (antrópica vs natural en 2025), bosque 2025, riesgo de deforestación | landing (zip oficial) |
 | SERNANP | ANP de administración nacional definitivas y zonas de amortiguamiento | landing (shapefile oficial) |
-| GADM 4.1 | Distritos de Madre de Dios | landing |
+| GADM 4.1 | Distritos y límite departamental (Madre de Dios, Cusco, Puno) | landing |
 | OpenStreetMap (Geofabrik) | Carretera Interoceánica y ríos | landing |
 
 ## Arquitectura (medallion sobre Unity Catalog)

@@ -77,6 +77,10 @@ def ingest_sernanp(landing: Path, bronze: Path):
 
 
 def ingest_gadm(landing: Path, bronze: Path):
+    """
+    Distritos de TODOS los departamentos que toca el área de estudio (Madre de Dios y limítrofes)
+    y el límite departamental recortado al área, para no confundir territorios en mapas y tablas.
+    """
     import geopandas as gpd
     z = _first(landing, "gadm", "*.zip")
     if z is None:
@@ -85,11 +89,18 @@ def ingest_gadm(landing: Path, bronze: Path):
     with zipfile.ZipFile(z) as zz:
         member = next(n for n in zz.namelist() if n.endswith(".json"))
     g = gpd.read_file(f"/vsizip/{z}/{member}")
-    g = g[g["NAME_1"].str.replace(" ", "").str.lower() == "madrededios"]
+    g = g[g.intersects(_aoi(0.05))]
     g = g[["GID_3", "NAME_1", "NAME_2", "NAME_3", "geometry"]].rename(
         columns={"NAME_1": "departamento", "NAME_2": "provincia", "NAME_3": "distrito"})
-    _save(g, bronze, "distritos_madre_de_dios")
-    print(f"[GADM] {len(g)} distritos de Madre de Dios")
+    # GADM escribe "MadredeDios": se normaliza el nombre
+    g["departamento"] = g["departamento"].replace({"MadredeDios": "Madre de Dios"})
+    _save(g, bronze, "distritos")
+    dep = g.dissolve(by="departamento").reset_index()[["departamento", "geometry"]]
+    dep["geometry"] = dep.geometry.intersection(_aoi(0.15))
+    _save(dep, bronze, "departamentos")
+    resumen = g.groupby("departamento")["distrito"].apply(lambda s: ", ".join(sorted(s))).to_dict()
+    for d, ds in resumen.items():
+        print(f"[GADM] {d}: {ds}")
     return len(g)
 
 

@@ -20,6 +20,7 @@ import streamlit as st
 SCHEMA = os.getenv("GEOCLOUD_SCHEMA", "workspace.madre_dios_rs")
 HA_PX = 0.04                      # hectáreas por píxel de 20 m
 ANIOS = [2018, 2020, 2022, 2024, 2025]
+AOI = (-70.45, -13.15, -69.85, -12.80)   # área de estudio (lon_min, lat_min, lon_max, lat_max)
 
 st.set_page_config(page_title="Minería y deforestación | Madre de Dios", page_icon="🛰️", layout="wide")
 
@@ -76,21 +77,38 @@ def cargar_datos():
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_capas():
     from shapely import wkt
+    from shapely.geometry import box
+    caja = box(*AOI).buffer(0.03)                     # todo se recorta al área de estudio
     capas = {}
-    for nombre in ["rios", "vias", "areas_protegidas_sernanp", "zonas_amortiguamiento", "poblados"]:
+    for nombre in ["departamentos", "rios", "vias", "areas_protegidas_sernanp", "zonas_amortiguamiento", "poblados"]:
         try:
             df = query(f"SELECT * FROM {SCHEMA}.bronze_vec_{nombre}")
         except Exception:
             continue
         geoms = [wkt.loads(w) for w in df["wkt"]]
+        if nombre == "departamentos":
+            etiquetas = []
+            for d, g in zip(df["departamento"], geoms):
+                parte = g.intersection(box(*AOI))
+                if not parte.is_empty and parte.area > 0.03 * box(*AOI).area:
+                    p = parte.representative_point()
+                    etiquetas.append({"name": str(d).upper(), "lon": p.x, "lat": p.y})
+            capas["departamentos_etiquetas"] = pd.DataFrame(etiquetas)
+        geoms = [g.intersection(caja) if nombre != "poblados" else g for g in geoms]
         if nombre == "poblados":
             capas[nombre] = pd.DataFrame({"name": df["name"], "lon": [g.x for g in geoms], "lat": [g.y for g in geoms]})
             continue
         paths = []
         for g in geoms:
-            partes = getattr(g, "geoms", [g])
-            for p in partes:
-                linea = p.exterior if p.geom_type == "Polygon" else p
+            if g.is_empty:
+                continue
+            for p in getattr(g, "geoms", [g]):
+                if p.geom_type == "Polygon":
+                    linea = p.exterior
+                elif p.geom_type in ("LineString", "LinearRing"):
+                    linea = p
+                else:
+                    continue
                 paths.append({"path": [list(c[:2]) for c in linea.coords]})
         capas[nombre] = pd.DataFrame(paths)
     return capas
@@ -116,12 +134,15 @@ LISA_COLORES = {"Pérdida-Pérdida (frente activo)": [178, 24, 43, 220], "Aument
 # ---------------------------------------------------------------------------
 # Interfaz
 # ---------------------------------------------------------------------------
-st.title("🛰️ Minería aurífera y deforestación en Madre de Dios")
-st.caption("Corredor La Pampa, Huepetuhe y Mazuko · Sentinel-2, Geobosques (MINAM), SERNANP · "
-           "procesado en Databricks (Spark, Delta Lake, H3) y servido desde Unity Catalog")
-
 feat = cargar_datos()
 capas = cargar_capas()
+
+deptos_area = sorted(feat["departamento"].dropna().unique()) if "departamento" in feat else ["Madre de Dios"]
+otros = [d for d in deptos_area if d != "Madre de Dios"]
+st.title("🛰️ Minería aurífera y deforestación en el corredor La Pampa, Huepetuhe y Mazuko")
+st.caption("Sur de Madre de Dios" + (f", con sectores limítrofes de {' y '.join(otros)}" if otros else "") +
+           " · Sentinel-2, Geobosques (MINAM), SERNANP · procesado en Databricks (Spark, Delta Lake, H3) "
+           "y servido desde Unity Catalog")
 
 with st.sidebar:
     st.header("Indicador")
@@ -143,7 +164,9 @@ with st.sidebar:
         col = f"ndvi_{anio}"
 
     st.header("Filtros")
-    distritos = sorted(feat["distrito"].dropna().unique()) if "distrito" in feat else []
+    sel_dep = st.multiselect("Departamento", deptos_area, default=deptos_area)
+    base_dist = feat[feat["departamento"].isin(sel_dep)] if "departamento" in feat else feat
+    distritos = sorted(base_dist["distrito"].dropna().unique()) if "distrito" in feat else []
     sel_dist = st.multiselect("Distrito", distritos, default=distritos)
     ambito = st.radio("Ámbito", ["Todo", "Dentro de ANP", "Zona de amortiguamiento", "Fuera de ANP"], horizontal=False)
     max_cauce = st.slider("Distancia máxima a ríos y quebradas (km)", 0.0,
@@ -156,6 +179,8 @@ with st.sidebar:
     ver_anp = st.checkbox("ANP y zonas de amortiguamiento", True)
 
 f = feat.copy()
+if "departamento" in f:
+    f = f[f["departamento"].isin(sel_dep)]
 if sel_dist and "distrito" in f:
     f = f[f["distrito"].isin(sel_dist) | f["distrito"].isna()]
 if ambito == "Dentro de ANP" and "en_anp" in f:
@@ -191,8 +216,18 @@ with tab_mapa:
     else:
         m["color"] = colorear(m[col], cmap, vmin, vmax)
     m["valor"] = m[col].round(3).astype(str) if col != "lisa" else m["lisa"].fillna("s/d")
-    capas_deck = [pdk.Layer("H3HexagonLayer", m[["h3", "color", "valor", "distrito"]], get_hexagon="h3",
+    for c in ["departamento", "distrito"]:
+        if c not in m:
+            m[c] = ""
+    m[["departamento", "distrito"]] = m[["departamento", "distrito"]].fillna("s/d")
+    capas_deck = [pdk.Layer("H3HexagonLayer", m[["h3", "color", "valor", "departamento", "distrito"]], get_hexagon="h3",
                             get_fill_color="color", stroked=False, extruded=False, pickable=True, opacity=0.85)]
+    if "departamentos" in capas:
+        capas_deck.append(pdk.Layer("PathLayer", capas["departamentos"], get_path="path", get_color=[60, 60, 60],
+                                    width_min_pixels=3))
+        if len(capas.get("departamentos_etiquetas", [])):
+            capas_deck.append(pdk.Layer("TextLayer", capas["departamentos_etiquetas"], get_position=["lon", "lat"],
+                                        get_text="name", get_size=18, get_color=[60, 60, 60, 200]))
     if ver_rios and "rios" in capas:
         capas_deck.append(pdk.Layer("PathLayer", capas["rios"], get_path="path", get_color=[31, 120, 180],
                                     width_min_pixels=1.5))
@@ -205,10 +240,12 @@ with tab_mapa:
                 capas_deck.append(pdk.Layer("PathLayer", capas[n], get_path="path", get_color=c, width_min_pixels=2))
     if "poblados" in capas:
         capas_deck.append(pdk.Layer("TextLayer", capas["poblados"], get_position=["lon", "lat"], get_text="name",
-                                    get_size=13, get_color=[0, 0, 0], get_alignment_baseline="'bottom'"))
-    vista = pdk.ViewState(latitude=float(feat["lat"].mean()), longitude=float(feat["lon"].mean()), zoom=9.3)
+                                    get_size=12, get_color=[0, 0, 0], get_alignment_baseline="'bottom'"))
+    vista = pdk.ViewState(latitude=(AOI[1] + AOI[3]) / 2, longitude=(AOI[0] + AOI[2]) / 2, zoom=9.6, min_zoom=8)
     st.pydeck_chart(pdk.Deck(layers=capas_deck, initial_view_state=vista, map_provider="carto", map_style="light",
-                             tooltip={"text": "{distrito}\n" + nombre_ind + ": {valor}"}), width="stretch")
+                             tooltip={"text": "{departamento} · {distrito}\n" + nombre_ind + ": {valor}"}),
+                    width="stretch", height=620)
+    st.caption("Línea gris gruesa: límite departamental. Morado: ANP (SERNANP). Naranja: zona de amortiguamiento.")
     if col == "lisa":
         st.markdown(" · ".join(f"<span style='color:rgb({c[0]},{c[1]},{c[2]})'>■</span> {k}"
                                for k, c in LISA_COLORES.items()), unsafe_allow_html=True)
@@ -231,12 +268,15 @@ with tab_evol:
 
 with tab_dist:
     if "distrito" in f:
-        g = f.groupby("distrito").apply(lambda d: pd.Series({
+        claves = ["departamento", "distrito"] if "departamento" in f else ["distrito"]
+        g = f.groupby(claves).apply(lambda d: pd.Series({
             "hexágonos": len(d),
             "pérdida oficial (ha)": (d["frac_perdida_oficial"] * d["n_px_total"]).sum() * HA_PX,
             "pérdida modelo (ha)": (d["prob_modelo"] * d["n_px_modelo"]).sum() * HA_PX,
             "frentes activos (LISA)": (d["lisa"] == "Pérdida-Pérdida (frente activo)").sum(),
             "ΔNDVI medio": d["d_ndvi"].mean()}), include_groups=False).sort_values("pérdida oficial (ha)", ascending=False)
+        if isinstance(g.index, pd.MultiIndex):
+            g.index = [f"{dis} ({dep})" for dep, dis in g.index]
         st.bar_chart(g[["pérdida oficial (ha)", "pérdida modelo (ha)"]])
         st.dataframe(g.round(2), width="stretch")
 
@@ -247,7 +287,7 @@ with tab_hex:
     if elegido:
         r = feat[feat["h3"] == elegido].iloc[0]
         c1, c2 = st.columns([1, 2])
-        datos = {"Distrito": r.get("distrito"), "Pérdida oficial": f"{r.get('tasa_perdida_oficial', np.nan):.1%}",
+        datos = {"Departamento": r.get("departamento"), "Distrito": r.get("distrito"), "Pérdida oficial": f"{r.get('tasa_perdida_oficial', np.nan):.1%}",
                  "Probabilidad modelo": f"{r.get('prob_modelo', np.nan):.1%}", "Cluster LISA": r.get("lisa"),
                  "Gi* (z)": f"{r.get('gi_z', np.nan):.2f}", "Riesgo MINAM (1-5)": f"{r.get('riesgo_deforestacion', np.nan):.1f}",
                  "Distancia a ríos y quebradas": f"{r.get('dist_cauce_km', np.nan):.2f} km",
